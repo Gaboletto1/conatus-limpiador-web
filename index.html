@@ -165,11 +165,21 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
 /* impresión */
 .hoja-imp{display:none}
 @media print{
-  .barra,.portada,.tablero,.pie,.no-imprimir{display:none !important}
+  /* Ocultar main entero: antes solo se ocultaban algunas secciones y la vista
+     previa se imprimía además de la copia, duplicando los tres escritos. */
+  body > header, body > main, body > footer{display:none !important}
   .hoja-imp{display:block}
-  body{background:#fff}
+  body{background:#fff;color:#16181D}
   .hoja{border:none;box-shadow:none;padding:0;font-size:10.5pt;page-break-after:always}
+  /* Al imprimir un escrito suelto, las demás hojas quedan fuera. */
+  .hoja.fuera{display:none !important}
   .hoja:last-child{page-break-after:auto}
+  .hoja:not(.fuera):last-of-type{page-break-after:auto}
+  /* La firma no se parte entre páginas: un escrito con el nombre en una hoja y
+     la cédula en la siguiente se ve como un error de armado. */
+  .hoja .firma{page-break-inside:avoid;break-inside:avoid}
+  .hoja h4{page-break-after:avoid;break-after:avoid}
+  .hoja li{page-break-inside:avoid;break-inside:avoid}
   @page{margin:16mm 15mm}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
@@ -271,8 +281,10 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
   <div class="envoltura portada">
     <h1>Tus tres escritos están listos</h1>
     <p class="entrada">Uno para cada central. Imprímelos o guárdalos en PDF desde el diálogo de impresión de tu teléfono, y radícalos.</p>
-    <div class="acciones">
-      <button class="primario" style="width:auto" id="btn-imprimir">Imprimir o guardar en PDF</button>
+    <p class="entrada">Cada central recibe solo el suyo: son tres radicaciones distintas y ninguna necesita ver las otras.</p>
+    <div class="acciones" id="botones-imprimir"></div>
+    <div class="acciones" style="margin-top:10px">
+      <button class="secundario" id="btn-imprimir">Guardar los tres juntos</button>
       <button class="secundario" id="btn-ir-seguimiento">Ya los radiqué</button>
     </div>
     <div class="aviso"><strong>Dónde radicar.</strong> Lo mejor es el formulario de PQRS de cada central: te dan un número de radicado en el momento y no queda duda de que llegó. Por correo también vale — pide confirmación de entrega al enviar. <strong>No adjuntes copia de tu cédula</strong> a menos que te la exijan: tus datos ya van completos al pie del escrito, que es lo que la ley pide para identificarte.</div>
@@ -4636,6 +4648,18 @@ const LOGO = window.__LOGO__;
 document.getElementById('logo').src = LOGO;
 
 const hoy = () => new Date().toISOString().slice(0,10);
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio',
+               'agosto','septiembre','octubre','noviembre','diciembre'];
+/** '2026-09-13' → '13 de septiembre de 2026'. Un escrito no lleva fechas ISO. */
+function fechaLarga(iso){
+  if(!iso) return '';
+  const [a,m,d] = iso.split('-').map(Number);
+  return `${d} de ${MESES[m-1]} de ${a}`;
+}
+/** Dirección con ciudad, sin espacios sueltos antes de la coma. */
+function lugar(t){
+  return [t.direccion, t.ciudad].map(x => (x||'').trim()).filter(Boolean).join(', ');
+}
 const $  = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -4678,32 +4702,38 @@ function pintarErrores(errs){
 }
 
 /* ---------- documento ---------- */
+/** Unifica la capitalización: el módulo emite unos títulos en mayúsculas y
+ *  otros no, y mezclarlos en la misma página se lee como descuido. */
+function tituloSeccion(t){
+  const s = String(t).toLocaleLowerCase('es');
+  return s.charAt(0).toLocaleUpperCase('es') + s.slice(1);
+}
+
 function docAHtml(doc, conMembrete = true){
   const p = (x) => x ? esc(x) : '<span class="vacio">—</span>';
   const membrete = conMembrete ? `
     <div class="membrete">
       <div><img src="${LOGO}" alt=""><div class="lema">Derecho digital y nuevas tecnologías · wa.me/573227617887</div></div>
-      <div class="radicado">${esc(doc.consecutivo)}<br>${esc(doc.fecha)}</div>
+      <div class="radicado">${esc(doc.consecutivo)}<br>${esc(fechaLarga(doc.fecha))}</div>
     </div>` : '';
   return `${membrete}
     <div>Señores<br><span class="destino">${p(doc.destinatario.nombre)}</span>${doc.destinatario.ciudad ? '<br>'+esc(doc.destinatario.ciudad) : ''}</div>
     <p style="margin-top:12px"><strong>Asunto:</strong> ${esc(doc.asunto)}</p>
     <p>${esc(doc.presentacion)}</p>
     <h4>Hechos</h4><ol>${doc.hechos.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>
-    <h4>${esc(doc.etiquetaPeticiones || 'Peticiones')}</h4>
+    <h4>${esc(tituloSeccion(doc.etiquetaPeticiones || 'Peticiones'))}</h4>
     <ol>${doc.peticiones.map(x=>`<li>${esc(x.texto)}<span class="fund">${esc(x.fundamento)}</span></li>`).join('')}</ol>
     <h4>Fundamentos de derecho</h4><ol>${doc.fundamentoDelDerecho.map(f=>`<li>${esc(f)}</li>`).join('')}</ol>
-    ${(doc.seccionesExtra||[]).map(s=>`<h4>${esc(s.titulo)}</h4>${s.parrafos.map(x=>`<p>${esc(x)}</p>`).join('')}`).join('')}
+    ${(doc.seccionesExtra||[]).map(s=>`<h4>${esc(tituloSeccion(s.titulo))}</h4>${s.parrafos.map(x=>`<p>${esc(x)}</p>`).join('')}`).join('')}
     <p><strong>Término:</strong> ${esc(doc.plazoIndicado)}</p>
     ${doc.advertenciaEscalada ? `<p style="font-style:italic;color:#6B7280">${esc(doc.advertenciaEscalada)}</p>` : ''}
     <h4>Notificaciones</h4>
-    <p>Correo electrónico: ${p(doc.notificaciones.correo)}<br>Dirección: ${p(doc.notificaciones.direccion)}</p>
+    <p>Correo electrónico: ${p(doc.notificaciones.correo)}<br>Dirección: ${p(lugar(doc.titular))}</p>
     <div class="firma">Atentamente,<br><br><br>
-      <strong>${p(doc.titular.nombre)}</strong><br>C.C. ${p(doc.titular.documento)}
-      ${doc.titular.direccion ? '<br>'+esc(doc.titular.direccion) : ''}
-      ${doc.titular.ciudad ? ', '+esc(doc.titular.ciudad) : ''}
-      ${doc.titular.telefono ? '<br>Tel. '+esc(doc.titular.telefono) : ''}
-      ${doc.titular.correo ? '<br>'+esc(doc.titular.correo) : ''}
+      <strong>${p(doc.titular.nombre)}</strong><br>C.C. ${p(doc.titular.documento)}${
+        lugar(doc.titular) ? '<br>'+esc(lugar(doc.titular)) : ''}${
+        doc.titular.telefono ? '<br>Tel. '+esc(doc.titular.telefono) : ''}${
+        doc.titular.correo ? '<br>'+esc(doc.titular.correo) : ''}
     </div>`;
 }
 
@@ -4810,8 +4840,46 @@ function reconstruirDocs(){
 
 function pintarEscritos(){
   const docs = estado.docs ?? reconstruirDocs();
-  $('#previsualizacion').innerHTML = docs.map(d => `<div class="hoja" style="margin-bottom:22px">${docAHtml(d)}</div>`).join('');
-  $('#para-imprimir').innerHTML = docs.map(d => `<div class="hoja">${docAHtml(d)}</div>`).join('');
+  $('#previsualizacion').innerHTML = docs.map(d =>
+    `<div class="hoja" style="margin-bottom:22px">${docAHtml(d)}</div>`).join('');
+  $('#para-imprimir').innerHTML = docs.map(d =>
+    `<div class="hoja" data-op="${esc(d.operadorId)}">${docAHtml(d)}</div>`).join('');
+  $('#botones-imprimir').innerHTML = docs.map(d =>
+    `<button class="primario" style="width:auto" data-imprimir="${esc(d.operadorId)}">${esc(nombreCorto(d))}</button>`).join('');
+}
+
+/** Nombre de la central en dos palabras, para que quepa en el botón. */
+function nombreCorto(d){
+  const n = d.destinatario.nombre;
+  if(/Datacr/i.test(n)) return 'Datacrédito';
+  if(/TransUnion/i.test(n)) return 'TransUnion';
+  if(/Procr/i.test(n)) return 'Procrédito';
+  return n;
+}
+
+/**
+ * Imprime un solo escrito. Marcar las demás hojas como ocultas antes de llamar
+ * a print() es lo que evita que una central reciba los escritos de las otras.
+ */
+function imprimirUno(operadorId){
+  $$('#para-imprimir .hoja').forEach(h => {
+    h.classList.toggle('fuera', operadorId !== null && h.dataset.op !== operadorId);
+  });
+  // El navegador propone el título de la página como nombre del archivo. Sin
+  // esto los tres PDF se llamarían igual y habría que renombrarlos a mano
+  // justo cuando importa distinguirlos: al radicar y al registrar el acuse.
+  const previo = document.title;
+  const docs = estado.docs ?? reconstruirDocs();
+  const doc = operadorId ? docs.find(d => d.operadorId === operadorId) : null;
+  document.title = doc
+    ? `${doc.consecutivo} ${nombreCorto(doc)}`
+    : `Consultas ${docs[0]?.fecha ?? ''}`;
+  window.print();
+  // El diálogo es síncrono en la práctica, pero restaurar en el evento evita
+  // dejar el título cambiado si el navegador lo maneja de forma diferida.
+  const restaurar = () => { document.title = previo; window.removeEventListener('afterprint', restaurar); };
+  window.addEventListener('afterprint', restaurar);
+  setTimeout(restaurar, 4000);
 }
 
 /* ---------- seguimiento ---------- */
@@ -4998,7 +5066,7 @@ function iniciar(){
     $('#'+id).closest('.marca-check').classList.remove('malo');
   }));
   $('#formulario').addEventListener('submit', (e)=>{ e.preventDefault(); generar(); });
-  $('#btn-imprimir').addEventListener('click', ()=>window.print());
+  $('#btn-imprimir').addEventListener('click', ()=>imprimirUno(null));
   $('#btn-ir-seguimiento').addEventListener('click', ()=>{ pintarSeguimiento(); irA('paso-seguimiento'); });
   $('#btn-reiniciar').addEventListener('click', ()=>{
     if(!confirm('Se borra todo lo guardado en este dispositivo. ¿Seguir?')) return;
@@ -5046,6 +5114,7 @@ function iniciar(){
       estado.obligaciones = f.length ? f : [{}]; pintarObligaciones();
     }
     if(b.id === 'btn-evaluar') evaluar();
+    if(b.dataset.imprimir) imprimirUno(b.dataset.imprimir);
   });
 
   if(!aceptado()){
