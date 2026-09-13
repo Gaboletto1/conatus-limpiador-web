@@ -111,6 +111,14 @@ button:focus-visible{outline:2px solid var(--azul);outline-offset:2px}
 .marcador.bajo{border-color:var(--alerta);color:var(--alerta)}
 .marcador.ganado{border-color:var(--ok);color:var(--ok)}
 
+/* canales de radicación */
+.canales{margin-top:9px}
+.canal{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px;font-size:.86rem}
+.canal .clase{font-size:.7rem;font-weight:600;color:var(--gris);border:1px solid var(--linea);border-radius:99px;padding:1px 8px;flex:none}
+.canal .dato{font-family:var(--sans);word-break:break-all;cursor:pointer;border-bottom:1px dashed var(--linea)}
+.canal .dato:hover{border-bottom-color:var(--azul);color:var(--azul)}
+.canal .nota{font-size:.78rem;color:var(--gris);flex-basis:100%;margin-left:0}
+
 /* diálogo */
 dialog{border:none;border-radius:12px;padding:0;max-width:min(440px,92vw);background:var(--papel);color:var(--tinta)}
 dialog::backdrop{background:rgba(11,26,74,.45)}
@@ -148,6 +156,12 @@ select{width:100%;padding:10px 12px;border:1px solid var(--linea);border-radius:
 .acepto{display:flex;gap:11px;align-items:flex-start;max-width:62ch;margin-bottom:18px;cursor:pointer}
 .acepto input{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--azul)}
 .acepto span{font-size:.93rem}
+
+/* centrales */
+.central{display:flex;gap:10px;align-items:flex-start;margin-bottom:9px;cursor:pointer}
+.central input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--azul)}
+.central .cuerpo{font-size:.9rem;line-height:1.4}
+.central .alcance{display:block;font-size:.76rem;color:var(--gris)}
 
 /* consentimiento */
 .puerta{border:1px solid var(--linea);border-radius:10px;padding:18px;background:var(--papel-2);margin:22px 0}
@@ -255,6 +269,18 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
         <input id="f-tel" inputmode="tel" autocomplete="tel" placeholder="3001234567"></div>
 
       <div class="puerta">
+        <h3>A cuáles centrales</h3>
+        <p class="sub" style="font-size:.86rem;color:var(--gris);margin:-2px 0 12px">Cada una tiene su propia base: un reporte puede estar en una y no en las otras.</p>
+        <div id="lista-centrales"></div>
+        <div class="campo" style="margin-top:12px">
+          <label for="f-otra">¿Te aparece otra central en algún reporte?</label>
+          <input id="f-otra" placeholder="Nombre de la central" autocomplete="off">
+          <div class="pista">Escríbela y se agrega a la lista. Puede figurar como cesionaria de una cartera.</div>
+        </div>
+        <button type="button" class="secundario menudo" id="btn-otra">Agregar central</button>
+      </div>
+
+      <div class="puerta">
         <h3>Antes de continuar</h3>
         <label class="marca-check"><input type="checkbox" id="c-titular">
           <span>La información que voy a escribir es mía, o estoy autorizado para usarla. Lo declaro bajo la gravedad de juramento.</span></label>
@@ -282,6 +308,7 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
     <h1>Tus tres escritos están listos</h1>
     <p class="entrada">Uno para cada central. Imprímelos o guárdalos en PDF desde el diálogo de impresión de tu teléfono, y radícalos.</p>
     <p class="entrada">Cada central recibe solo el suyo: son tres radicaciones distintas y ninguna necesita ver las otras.</p>
+    <div id="donde-radicar" style="margin-top:18px"></div>
     <div class="acciones" id="botones-imprimir"></div>
     <div class="acciones" style="margin-top:10px">
       <button class="secundario" id="btn-imprimir">Guardar los tres juntos</button>
@@ -3767,8 +3794,9 @@ module.exports = {
 
 const { parseFecha, fmtFecha, sumarDiasHabiles } = require('./nucleo-habeas-data.js');
 const { consecutivo } = require('./escrito-peticion-probatoria.js');
+const { exigeAutenticacion, SECCION_AUTENTICACION } = require('./canales-radicacion.js');
 
-const CONSULTA_VERSION = '2026.09.09-CON-1';
+const CONSULTA_VERSION = '2026.09.13-CON-2';
 
 /** Art. 16.I: 10 días hábiles, prorrogables por 5 informando motivos y fecha. */
 const PLAZO_HABILES = 10;
@@ -3904,12 +3932,18 @@ function construirConsultaInicial({ titular, operador, canal = CANAL.CORREO_ELEC
       'Ley 1266 de 2008, arts. 6, 8, 10 y 16, modificada por la Ley 2157 de 2021.',
       'Ley 1755 de 2015, arts. 13 y 32.',
     ]),
-    seccionesExtra: Object.freeze([Object.freeze({
+    // Ante Datacrédito y TransUnion se anticipa la objeción de forma: ambas
+    // exigen autenticación notarial en sus portales, y esperar el rechazo
+    // cuesta el término completo.
+    seccionesExtra: Object.freeze([
+      ...(exigeAutenticacion(operador.id) ? [SECCION_AUTENTICACION] : []),
+      Object.freeze({
       titulo: 'GRATUIDAD Y CANAL DE ENTREGA',
       parrafos: Object.freeze([
         'El parágrafo 2 del artículo 10 de la Ley 1266 de 2008, modificado por la Ley 2157 de 2021, dispone que la consulta de la información por parte del titular será gratuita en toda ocasión y por todos los medios. En consecuencia, se solicita que la entrega se efectúe por el canal señalado, sin remitir al suscrito a plataformas de consulta ni condicionarla a suscripción o pago.',
       ]),
     })]),
+    exigeAutenticacion: exigeAutenticacion(operador.id),
     plazoIndicado: `diez (10) días hábiles, prorrogables por cinco (5) días hábiles más únicamente si se informan antes del vencimiento los motivos de la demora y la fecha de atención (art. 16.I de la Ley 1266 de 2008).`,
     advertenciaEscalada: 'Vencido el término sin respuesta, la solicitud se entiende resuelta favorablemente para todos los efectos legales conforme al artículo 16, numeral 8, de la Ley 1266 de 2008, adicionado por el artículo 7 de la Ley 2157 de 2021.',
     notificaciones: Object.freeze({
@@ -4088,6 +4122,7 @@ function crearSolicitud({ titularId, fecha, operadores = OPERADORES, consecutivo
     ramos[op.id] = Object.freeze({
       operadorId: op.id,
       nombre: op.nombre,
+      ciudad: op.ciudad ?? null,
       estado: ESTADO.GENERADA,
       consecutivo: consecutivos[op.id] ?? null,
       radicacion: null,
@@ -4610,6 +4645,181 @@ module.exports = {
 };
 
   },
+  'canales-radicacion': function (module, exports, require) {
+'use strict';
+/**
+ * canales-radicacion.js
+ * Conatus Legal — Limpiador de Historia Crediticia
+ *
+ * Dónde radicar cada escrito. Sin esto el sistema entrega seis documentos y
+ * ninguna indicación de a dónde mandarlos, que es como no entregar nada.
+ *
+ * PROCEDENCIA Y CADUCIDAD
+ *   Cada canal declara de dónde salió y cuándo se verificó. Los correos y las
+ *   direcciones cambian: un dato viejo aquí significa un escrito que nunca
+ *   llegó y un término que nunca corrió. `canalesDesactualizados` los delata.
+ *
+ * LA OBJECIÓN QUE HAY QUE ANTICIPAR
+ *   Datacrédito y TransUnion exigen en sus portales que la petición escrita
+ *   lleve firma autenticada ante notario, o presentación personal, o poder
+ *   autenticado. Esa exigencia no está en la Ley 1266 ni en la Ley 1755, y ha
+ *   sido desestimada por vía de tutela: negar la respuesta con ese argumento
+ *   se calificó como actitud evasiva y se concedió el amparo del derecho de
+ *   petición. Por eso el escrito la rebate de antemano en vez de esperar el
+ *   rechazo: cada rechazo cuesta el término completo.
+ *
+ * @module canales-radicacion
+ */
+
+const { parseFecha, diasEntre } = require('./nucleo-habeas-data.js');
+
+const CANALES_VERSION = '2026-09-13';
+
+/** Antigüedad a partir de la cual un canal debe reverificarse. */
+const MESES_VIGENCIA = 6;
+
+const TIPO = Object.freeze({
+  PORTAL: 'PORTAL',
+  CORREO: 'CORREO',
+  PRESENCIAL: 'PRESENCIAL',
+});
+
+/**
+ * Canales por operador, en orden de preferencia.
+ *
+ * El portal va primero siempre: el acuse lo produce el destinatario y no hay
+ * discusión sobre la recepción, que es de lo que depende el silencio positivo.
+ */
+const CANALES = Object.freeze({
+  DATACREDITO: Object.freeze({
+    operadorId: 'DATACREDITO',
+    nombre: 'Experian Colombia S.A. — Datacrédito',
+    canales: Object.freeze([
+      Object.freeze({
+        tipo: TIPO.PORTAL, etiqueta: 'Módulo de reclamos',
+        valor: 'https://www.datacredito.com.co/habeas-data',
+        nota: 'Sin costo. Produce número de radicado.',
+      }),
+      Object.freeze({
+        tipo: TIPO.CORREO, etiqueta: 'Correo de atención al ciudadano',
+        valor: 'servicioalciudadano@experian.com',
+        nota: 'Publicado por la entidad para peticiones, consultas y reclamos.',
+      }),
+      Object.freeze({
+        tipo: TIPO.PRESENCIAL, etiqueta: 'Oficina de radicación',
+        valor: 'Carrera 7 No. 76-35, Bogotá D.C.',
+        nota: 'Sello de recibido sobre la copia.',
+      }),
+    ]),
+    exigeAutenticacion: true,
+    procedencia: 'Sitio web de la entidad y publicación de prensa que cita sus canales.',
+    verificadoEl: '2026-09-13',
+  }),
+
+  TRANSUNION: Object.freeze({
+    operadorId: 'TRANSUNION',
+    nombre: 'TransUnion Colombia (antes CIFIN)',
+    canales: Object.freeze([
+      Object.freeze({
+        tipo: TIPO.PORTAL, etiqueta: 'PQRS persona natural',
+        valor: 'https://www.transunion.co/producto/solicitudes-quejas-y-reclamos-persona-natural',
+        nota: 'Sin costo.',
+      }),
+      Object.freeze({
+        tipo: TIPO.CORREO, etiqueta: 'Notificaciones judiciales',
+        valor: 'notificaciones@transunion.com',
+        nota: 'Dirección registrada en el certificado de Cámara de Comercio y autorizada por la entidad para recibir notificaciones.',
+      }),
+    ]),
+    exigeAutenticacion: true,
+    procedencia: 'Sitio web de la entidad y providencia judicial que identifica su correo de notificaciones.',
+    verificadoEl: '2026-09-13',
+  }),
+
+  PROCREDITO: Object.freeze({
+    operadorId: 'PROCREDITO',
+    nombre: 'Procrédito — Fenalco Antioquia',
+    canales: Object.freeze([
+      Object.freeze({
+        tipo: TIPO.PORTAL, etiqueta: 'PQRS',
+        valor: 'https://www.procreditoenlinea.com/pqrs',
+        nota: 'Indicar en el asunto el derecho que se ejerce.',
+      }),
+      Object.freeze({
+        tipo: TIPO.CORREO, etiqueta: 'Reclamaciones habeas data',
+        valor: 'reclamacioneshabeasdata@fenalcoantioquia.com',
+        nota: 'Buzón específico de habeas data.',
+      }),
+      Object.freeze({
+        tipo: TIPO.CORREO, etiqueta: 'Atención Procrédito',
+        valor: 'procredito@fenalcoantioquia.com',
+        nota: 'Canal general publicado en su PQRS.',
+      }),
+      Object.freeze({
+        tipo: TIPO.PRESENCIAL, etiqueta: 'Punto de Atención al Ciudadano',
+        valor: 'Calle 50 N° 42-54, Medellín, Antioquia',
+        nota: null,
+      }),
+    ]),
+    exigeAutenticacion: false,
+    procedencia: 'Sitio web de Procrédito y correspondencia judicial dirigida a Fenalco Antioquia.',
+    verificadoEl: '2026-09-13',
+  }),
+});
+
+/**
+ * Operadores sin canal verificado.
+ *
+ * No se inventan direcciones: un correo equivocado es un escrito que nunca
+ * llegó y un término que nunca corrió. Para estos el sistema dice que hay que
+ * buscarlo, en vez de simular que lo sabe.
+ */
+const SIN_CANAL_VERIFICADO = Object.freeze(['COVINOC', 'CREDICHEQUE', 'FENALCHEQUE']);
+
+/** Canales del operador, o null si no se han verificado. */
+function canalesDe(operadorId) {
+  return CANALES[operadorId] ?? null;
+}
+
+/** Canal recomendado: el primero de la lista, que siempre es el de mejor acuse. */
+function canalRecomendado(operadorId) {
+  return CANALES[operadorId]?.canales[0] ?? null;
+}
+
+/** ¿La entidad exige autenticación notarial en sus propios términos? */
+function exigeAutenticacion(operadorId) {
+  return CANALES[operadorId]?.exigeAutenticacion === true;
+}
+
+/**
+ * Texto que rebate la exigencia de autenticación notarial, para incluirlo en
+ * el escrito dirigido a quien la impone.
+ */
+const SECCION_AUTENTICACION = Object.freeze({
+  titulo: 'SOBRE LA FORMA DE LA PETICIÓN',
+  parrafos: Object.freeze([
+    'Se advierte que ni la Ley 1266 de 2008 ni la Ley 1755 de 2015 exigen autenticación notarial, presentación personal ni poder autenticado para que el titular formule una consulta sobre su propia información. El artículo 16, numeral I, de la Ley 1266 dispone que la consulta se formulará verbalmente, por escrito o por cualquier canal de comunicación, siempre que se conserve evidencia por medios técnicos.',
+    'Los requisitos que la entidad publique en sus plataformas no pueden añadir cargas no previstas en la ley ni condicionar el ejercicio de un derecho fundamental. La jurisprudencia constitucional ha calificado como actitud evasiva la negativa a responder peticiones de habeas data fundada en exigencias formales de esa naturaleza, y ha concedido el amparo del derecho de petición.',
+    'En consecuencia, se solicita dar trámite de fondo a esta consulta. De negarse la respuesta por razones de forma, se entenderá agotado el requisito para acudir a la queja ante la autoridad de vigilancia y a la acción de tutela.',
+  ]),
+});
+
+/** Canales cuya verificación caducó. Se informa; no se borra nada. */
+function canalesDesactualizados(hoy, meses = MESES_VIGENCIA) {
+  const t = parseFecha(hoy, 'hoy');
+  if (t === null) throw new TypeError('hoy es obligatoria.');
+  return Object.values(CANALES)
+    .map((c) => ({ operadorId: c.operadorId, verificadoEl: c.verificadoEl, dias: diasEntre(parseFecha(c.verificadoEl), t) }))
+    .filter((x) => x.dias > meses * 30);
+}
+
+module.exports = {
+  CANALES_VERSION, MESES_VIGENCIA, TIPO, CANALES, SIN_CANAL_VERIFICADO,
+  SECCION_AUTENTICACION,
+  canalesDe, canalRecomendado, exigeAutenticacion, canalesDesactualizados,
+};
+
+  },
   };
 
   var cache = {};
@@ -4625,7 +4835,7 @@ module.exports = {
 
   return {
     BUNDLE_VERSION: '2026.09.09-BND-1',
-    modulos: ["nucleo-habeas-data","ingesta-validacion","maquina-estados","escrito-peticion-probatoria","escrito-reclamo","escritos-escalada","escrito-consulta-inicial","fase-consulta","catalogo-entidades"],
+    modulos: ["nucleo-habeas-data","ingesta-validacion","maquina-estados","escrito-peticion-probatoria","escrito-reclamo","escritos-escalada","escrito-consulta-inicial","fase-consulta","catalogo-entidades","canales-radicacion"],
     require: requerir,
     get nucleoHabeasData() { return requerir('nucleo-habeas-data'); },
     get ingestaValidacion() { return requerir('ingesta-validacion'); },
@@ -4636,6 +4846,7 @@ module.exports = {
     get escritoConsultaInicial() { return requerir('escrito-consulta-inicial'); },
     get faseConsulta() { return requerir('fase-consulta'); },
     get catalogoEntidades() { return requerir('catalogo-entidades'); },
+    get canalesRadicacion() { return requerir('canales-radicacion'); },
   };
 });
 
@@ -4778,6 +4989,40 @@ function irA(id){
 }
 
 const VERSION_TERMINOS = '2026-09-12';
+
+/* ---------- centrales ---------- */
+const catalogo = L.catalogoEntidades.crearCatalogo();
+/** Todas las activas del catálogo, más las que agregue el usuario. */
+let centrales = catalogo.lista().map(e => ({ ...e, marcada: true }));
+
+const ALCANCE = {
+  NACIONAL: 'Cobertura nacional',
+  SECTORIAL: 'Sectorial — comercio, cheques, cooperativas',
+};
+
+function pintarCentrales(){
+  $('#lista-centrales').innerHTML = centrales.map((c, i) => `
+    <label class="central"><input type="checkbox" data-central="${i}" ${c.marcada ? 'checked' : ''}>
+      <span class="cuerpo">${esc(c.nombre)}
+        <span class="alcance">${esc(ALCANCE[c.ambito] ?? 'Agregada por ti')}</span>
+      </span></label>`).join('');
+}
+
+function centralesElegidas(){
+  return centrales.filter(c => c.marcada).map(({ id, nombre, ciudad }) => ({ id, nombre, ciudad }));
+}
+
+function agregarCentral(){
+  const nombre = $('#f-otra').value.trim();
+  if(nombre.length < 3){ $('#f-otra').focus(); return; }
+  const id = nombre.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]/g,'_').slice(0,24);
+  if(centrales.some(c => c.id === id)){ $('#f-otra').value = ''; return; }
+  centrales = [...centrales, { id, nombre, ciudad: null, ambito: 'AGREGADA', marcada: true }];
+  $('#f-otra').value = '';
+  pintarCentrales();
+  guardar();
+}
+
 const CASILLAS = ['c-titular','c-alcance','c-local'];
 
 function pintarTerminos(){
@@ -4808,8 +5053,13 @@ function generar(){
     else $('.marca-check.malo input')?.focus();
     return;
   }
+  const elegidas = centralesElegidas();
+  if(!elegidas.length){
+    alert('Elige al menos una central. Sin destinatario no hay a quién pedirle el reporte.');
+    return;
+  }
   const fecha = hoy();
-  const docs = C.consultarTodos({ titular: t, fecha });
+  const docs = C.consultarTodos({ titular: t, fecha, operadores: elegidas });
   const consecutivos = Object.fromEntries(docs.map(d => [d.operadorId, d.consecutivo]));
   estado.titular = t;
   // Queda constancia de qué se aceptó y cuándo. Sirve al usuario, no a
@@ -4821,7 +5071,8 @@ function generar(){
     base: I.LEGITIMACION.TITULAR,
     clausulas: I.CLAUSULAS_TYC.map(c => c.id),
   };
-  estado.solicitud = F.crearSolicitud({ titularId: t.documento, fecha, consecutivos });
+  estado.solicitud = F.crearSolicitud({ titularId: t.documento, fecha, consecutivos, operadores: elegidas });
+  estado.centrales = centrales;
   estado.docs = docs;
   guardar();
   pintarEscritos();
@@ -4831,7 +5082,9 @@ function generar(){
 function reconstruirDocs(){
   if(!estado.titular || !estado.solicitud) return [];
   const fecha = estado.solicitud.creadaEl;
-  return C.OPERADORES.map((op, i) => C.construirConsultaInicial({
+  const ops = Object.values(estado.solicitud.operadores)
+    .map(r => ({ id: r.operadorId, nombre: r.nombre, ciudad: r.ciudad ?? null }));
+  return ops.map((op, i) => C.construirConsultaInicial({
     titular: estado.titular, operador: op, fecha,
     consecutivo: estado.solicitud.operadores[op.id]?.consecutivo
       ?? C.consecutivo({tipo:'CON', anio:Number(fecha.slice(0,4)), numero:i+1}),
@@ -4844,8 +5097,40 @@ function pintarEscritos(){
     `<div class="hoja" style="margin-bottom:22px">${docAHtml(d)}</div>`).join('');
   $('#para-imprimir').innerHTML = docs.map(d =>
     `<div class="hoja" data-op="${esc(d.operadorId)}">${docAHtml(d)}</div>`).join('');
-  $('#botones-imprimir').innerHTML = docs.map(d =>
-    `<button class="primario" style="width:auto" data-imprimir="${esc(d.operadorId)}">${esc(nombreCorto(d))}</button>`).join('');
+  $('#botones-imprimir').innerHTML = '';
+  $('#previsualizacion').insertAdjacentHTML('beforebegin', '');
+  $('#donde-radicar').innerHTML = docs.map(d => tarjetaRadicacion(d)).join('');
+}
+
+const CANALES = L.canalesRadicacion;
+const ICONO = { PORTAL:'Sitio', CORREO:'Correo', PRESENCIAL:'Oficina' };
+
+/** Qué imprimir y dónde radicarlo, juntos: separarlos obliga a buscar. */
+function tarjetaRadicacion(d){
+  const info = CANALES.canalesDe(d.operadorId);
+  const cuerpo = info
+    ? info.canales.map(c => `
+        <div class="canal">
+          <span class="clase">${esc(ICONO[c.tipo] ?? c.tipo)}</span>
+          ${c.tipo === 'PORTAL'
+            ? `<a href="${esc(c.valor)}" target="_blank" rel="noopener noreferrer">${esc(c.etiqueta)}</a>`
+            : `<span class="dato" data-copiar="${esc(c.valor)}">${esc(c.valor)}</span>`}
+          ${c.nota ? `<span class="nota">${esc(c.nota)}</span>` : ''}
+        </div>`).join('')
+    : `<div class="canal"><span class="nota">No tenemos verificado un canal para esta central.
+         Búscalo en su sitio web antes de radicar: un correo equivocado es un escrito que nunca llegó
+         y un plazo que nunca corrió.</span></div>`;
+  const aviso = info?.exigeAutenticacion
+    ? `<p class="nota" style="margin-top:8px">Esta central pide firma autenticada ante notario en su portal. El escrito ya rebate esa exigencia; si aun así lo rechazan, ese rechazo sirve para la queja.</p>`
+    : '';
+  return `<div class="pista-op">
+    <header><span class="nombre">${esc(d.destinatario.nombre)}</span>
+      <span class="estado">${esc(d.consecutivo)}</span></header>
+    <div class="canales">${cuerpo}</div>${aviso}
+    <div class="acciones">
+      <button class="primario" style="width:auto" data-imprimir="${esc(d.operadorId)}">Guardar el PDF</button>
+    </div>
+  </div>`;
 }
 
 /** Nombre de la central en dos palabras, para que quepa en el botón. */
@@ -4854,7 +5139,8 @@ function nombreCorto(d){
   if(/Datacr/i.test(n)) return 'Datacrédito';
   if(/TransUnion/i.test(n)) return 'TransUnion';
   if(/Procr/i.test(n)) return 'Procrédito';
-  return n;
+  // Nombres largos no caben en un botón de celular.
+  return n.length > 18 ? n.slice(0, 17).trimEnd() + '…' : n;
 }
 
 /**
@@ -5060,7 +5346,15 @@ function iniciar(){
   $('#chk-acepto').addEventListener('change', (e)=>{ $('#btn-acepto').disabled = !e.target.checked; });
   $('#btn-acepto').addEventListener('click', ()=>{ registrarAceptacion(); refrescarVista(); irA('paso-datos'); });
 
+  if(estado.centrales?.length) centrales = estado.centrales;
+  pintarCentrales();
   pintarTerminos();
+  $('#btn-otra').addEventListener('click', agregarCentral);
+  $('#f-otra').addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); agregarCentral(); } });
+  $('#lista-centrales').addEventListener('change', (e)=>{
+    const i = e.target.dataset.central;
+    if(i !== undefined){ centrales[+i].marcada = e.target.checked; guardar(); }
+  });
   $('#formulario').addEventListener('input', refrescarVista);
   CASILLAS.forEach(id => $('#'+id).addEventListener('change', () => {
     $('#'+id).closest('.marca-check').classList.remove('malo');
@@ -5099,6 +5393,19 @@ function iniciar(){
         fecha: $('#r-fecha').value, suficiente: $('#r-suf').value === 'si', soporteId: sop,
       });
     });
+  });
+
+  // Tocar un correo o una dirección lo copia: en el celular, seleccionar texto
+  // largo a mano es de las cosas que hacen abandonar un trámite.
+  document.body.addEventListener('click', (e)=>{
+    const dato = e.target.closest('[data-copiar]');
+    if(dato && navigator.clipboard){
+      navigator.clipboard.writeText(dato.dataset.copiar).then(()=>{
+        const previo = dato.textContent;
+        dato.textContent = 'copiado';
+        setTimeout(()=>{ dato.textContent = previo; }, 1200);
+      }).catch(()=>{});
+    }
   });
 
   document.body.addEventListener('click', (e)=>{
