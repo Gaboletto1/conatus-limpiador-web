@@ -246,7 +246,7 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
   <div class="envoltura portada">
     <h1>Pide tu historia crediticia completa,<br><span class="tension">no el resumen de siempre</span></h1>
     <p class="entrada">Las centrales de riesgo muestran en su portal un extracto de los últimos meses. La ley las obliga a entregarte todo el registro, incluida la fecha exacta en que quedaste en mora — el dato del que depende que un reporte deba borrarse.</p>
-    <p class="entrada">Escribe tus datos y esta página arma los tres escritos que hay que radicar. No sale de tu teléfono.</p>
+    <p class="entrada">Escribe tus datos y esta página arma los escritos que hay que radicar, uno por cada central que elijas. No sale de tu teléfono.</p>
   </div>
 
   <div class="envoltura tablero">
@@ -269,7 +269,7 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
         <input id="f-tel" inputmode="tel" autocomplete="tel" placeholder="3001234567"></div>
 
       <div class="puerta">
-        <h3>A cuáles centrales</h3>
+        <h3>A cuáles centrales <span id="conteo-centrales" style="font-family:var(--sans);font-size:.8rem;font-weight:400;color:var(--gris)"></span></h3>
         <p class="sub" style="font-size:.86rem;color:var(--gris);margin:-2px 0 12px">Cada una tiene su propia base: un reporte puede estar en una y no en las otras.</p>
         <div id="lista-centrales"></div>
         <div class="campo" style="margin-top:12px">
@@ -291,13 +291,13 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
         <details class="terminos"><summary>Leer las condiciones completas</summary><div id="texto-terminos"></div></details>
       </div>
 
-      <button type="submit" class="primario" id="btn-generar">Armar los tres escritos</button>
+      <button type="submit" class="primario" id="btn-generar">Armar los escritos</button>
 
       <div class="aviso"><strong>Tus datos no salen de aquí.</strong> Esta página funciona entera en tu teléfono: no hay servidor, no se envía nada y Conatus Legal no recibe ni conserva tu información. Puedes borrarla cuando quieras con «Empezar de nuevo».</div>
     </form>
 
     <div class="visor">
-      <div class="visor-etiqueta"><span>Así va quedando el primero de los tres</span><span id="contador-ceros"></span></div>
+      <div class="visor-etiqueta"><span id="etiqueta-visor">Así va quedando el primero</span><span id="contador-ceros"></span></div>
       <div class="hoja" id="vista"></div>
     </div>
   </div>
@@ -305,13 +305,13 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
 <!-- PASO 2 -->
 <section class="paso" id="paso-escritos">
   <div class="envoltura portada">
-    <h1>Tus tres escritos están listos</h1>
-    <p class="entrada">Uno para cada central. Imprímelos o guárdalos en PDF desde el diálogo de impresión de tu teléfono, y radícalos.</p>
-    <p class="entrada">Cada central recibe solo el suyo: son tres radicaciones distintas y ninguna necesita ver las otras.</p>
+    <h1 id="titulo-escritos">Tus escritos están listos</h1>
+    <p class="entrada" id="sub-escritos"></p>
+    <p class="entrada">Cada central recibe solo el suyo: son radicaciones distintas y ninguna necesita ver las otras.</p>
     <div id="donde-radicar" style="margin-top:18px"></div>
     <div class="acciones" id="botones-imprimir"></div>
     <div class="acciones" style="margin-top:10px">
-      <button class="secundario" id="btn-imprimir">Guardar los tres juntos</button>
+      <button class="secundario" id="btn-imprimir">Guardar todos juntos</button>
       <button class="secundario" id="btn-ir-seguimiento">Ya los radiqué</button>
     </div>
     <div class="aviso"><strong>Dónde radicar.</strong> Lo mejor es el formulario de PQRS de cada central: te dan un número de radicado en el momento y no queda duda de que llegó. Por correo también vale — pide confirmación de entrega al enviar. <strong>No adjuntes copia de tu cédula</strong> a menos que te la exijan: tus datos ya van completos al pie del escrito, que es lo que la ley pide para identificarte.</div>
@@ -326,6 +326,7 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
   <div class="envoltura portada">
     <h1>Los plazos corriendo</h1>
     <p class="entrada">Cada central tiene diez días hábiles para responder, prorrogables por cinco si avisa antes de vencerse. Si se vence y no responde, la ley entiende que <span class="tension">te dijo que sí</span>.</p>
+    <p class="entrada" id="resumen-plazos" style="font-size:.92rem"></p>
   </div>
   <div class="envoltura tablero" style="grid-template-columns:minmax(0,1fr)">
     <div id="lista-operadores"></div>
@@ -5006,10 +5007,60 @@ function pintarCentrales(){
       <span class="cuerpo">${esc(c.nombre)}
         <span class="alcance">${esc(ALCANCE[c.ambito] ?? 'Agregada por ti')}</span>
       </span></label>`).join('');
+  actualizarConteoCentrales();
+  refrescarConteo();
+}
+
+/** Repintar la lista entera al marcar una casilla perdería el foco: solo el
+ *  contador se actualiza. */
+function actualizarConteoCentrales(){
+  const n = centralesElegidas().length;
+  const marca = document.getElementById('conteo-centrales');
+  if(marca) marca.textContent = n === 0
+    ? 'ninguna elegida'
+    : `${NUMERO[n] ?? n} ${n === 1 ? 'elegida' : 'elegidas'}`;
 }
 
 function centralesElegidas(){
   return centrales.filter(c => c.marcada).map(({ id, nombre, ciudad }) => ({ id, nombre, ciudad }));
+}
+
+const NUMERO = ['ningún','un','dos','tres','cuatro','cinco','seis','siete','ocho','nueve','diez'];
+/** 'tres escritos', 'un escrito'. Anunciar tres cuando se eligieron dos delata
+ *  que el texto no mira lo que el usuario hizo. */
+function frase(n, singular, plural){
+  const palabra = NUMERO[n] ?? String(n);
+  return `${palabra} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * Sincroniza el botón con el estado real del formulario.
+ *
+ * El botón no puede anunciar «Armar seis escritos» mientras falta el
+ * consentimiento: promete algo que al tocarlo no ocurre, y el usuario acaba
+ * buscando el error en el lugar equivocado. Dice lo que falta.
+ */
+function refrescarConteo(){
+  const n = centralesElegidas().length;
+  const btn = $('#btn-generar');
+  const faltanCasillas = CASILLAS.filter(id => !$('#'+id)?.checked).length;
+
+  if(n === 0){
+    btn.textContent = 'Elige al menos una central';
+    btn.disabled = true;
+  } else if(faltanCasillas){
+    btn.textContent = faltanCasillas === 1
+      ? 'Falta marcar una casilla'
+      : `Faltan ${NUMERO[faltanCasillas]} casillas por marcar`;
+    btn.disabled = true;
+  } else {
+    btn.textContent = `Armar ${frase(n, 'escrito', 'escritos')}`;
+    btn.disabled = false;
+  }
+  const visor = document.getElementById('etiqueta-visor');
+  if(visor) visor.textContent = n > 1
+    ? `Así va quedando el primero de ${NUMERO[n] ?? n}`
+    : 'Así va quedando tu escrito';
 }
 
 function agregarCentral(){
@@ -5093,6 +5144,15 @@ function reconstruirDocs(){
 
 function pintarEscritos(){
   const docs = estado.docs ?? reconstruirDocs();
+  const n = docs.length;
+  $('#titulo-escritos').textContent = n === 1
+    ? 'Tu escrito está listo'
+    : `Tus ${frase(n, 'escrito', 'escritos')} están listos`;
+  $('#sub-escritos').textContent = n === 1
+    ? 'Imprímelo o guárdalo en PDF desde el diálogo de impresión de tu teléfono, y radícalo.'
+    : 'Uno para cada central. Imprímelos o guárdalos en PDF desde el diálogo de impresión de tu teléfono, y radícalos.';
+  $('#btn-imprimir').hidden = n < 2;
+  $('#btn-imprimir').textContent = `Guardar ${n === 2 ? 'los dos' : 'los ' + NUMERO[n]} juntos`;
   $('#previsualizacion').innerHTML = docs.map(d =>
     `<div class="hoja" style="margin-bottom:22px">${docAHtml(d)}</div>`).join('');
   $('#para-imprimir').innerHTML = docs.map(d =>
@@ -5216,6 +5276,13 @@ function pintarSeguimiento(){
   }).join('');
 
   const res = F.resumen(estado.solicitud, h);
+  const pendientes = seg.filter(r => r.corriendo && !r.vencido).length;
+  const sinRadicar = res.sinRadicar.length;
+  $('#resumen-plazos').textContent = [
+    sinRadicar ? `${frase(sinRadicar, 'escrito', 'escritos')} sin radicar` : '',
+    pendientes ? `${frase(pendientes, 'plazo corriendo', 'plazos corriendo')}` : '',
+    res.vencidosSinRespuesta.length ? `${frase(res.vencidosSinRespuesta.length, 'vencido', 'vencidos')} sin respuesta` : '',
+  ].filter(Boolean).join(' · ');
   $('#zona-analisis').innerHTML = (res.listaParaAnalisis || estado.obligaciones) ? bloqueObligaciones() : '';
   if(res.listaParaAnalisis || estado.obligaciones) pintarObligaciones();
 }
@@ -5353,11 +5420,18 @@ function iniciar(){
   $('#f-otra').addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); agregarCentral(); } });
   $('#lista-centrales').addEventListener('change', (e)=>{
     const i = e.target.dataset.central;
-    if(i !== undefined){ centrales[+i].marcada = e.target.checked; guardar(); }
+    if(i === undefined) return;
+    centrales[+i].marcada = e.target.checked;
+    guardar();
+    // Faltaba esto: el dato cambiaba pero el botón seguía anunciando el número
+    // anterior, así que decía «seis escritos» con cuatro centrales marcadas.
+    actualizarConteoCentrales();
+    refrescarConteo();
   });
   $('#formulario').addEventListener('input', refrescarVista);
   CASILLAS.forEach(id => $('#'+id).addEventListener('change', () => {
     $('#'+id).closest('.marca-check').classList.remove('malo');
+    refrescarConteo();
   }));
   $('#formulario').addEventListener('submit', (e)=>{ e.preventDefault(); generar(); });
   $('#btn-imprimir').addEventListener('click', ()=>imprimirUno(null));
