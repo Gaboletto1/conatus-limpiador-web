@@ -163,6 +163,12 @@ select{width:100%;padding:10px 12px;border:1px solid var(--linea);border-radius:
 .central .cuerpo{font-size:.9rem;line-height:1.4}
 .central .alcance{display:block;font-size:.76rem;color:var(--gris)}
 
+/* proyección de salida */
+.proyeccion{margin-top:10px;padding:11px 13px;border-radius:8px;background:var(--papel-2)}
+.proyeccion .fecha{font-family:var(--serif);font-size:1.25rem;line-height:1.2;color:var(--tinta)}
+.proyeccion .detalle{font-size:.85rem;color:var(--gris);margin:5px 0 0}
+.proyeccion.sin-ventaja .fecha{color:var(--alerta)}
+
 /* consentimiento */
 .puerta{border:1px solid var(--linea);border-radius:10px;padding:18px;background:var(--papel-2);margin:22px 0}
 .puerta h3{margin-bottom:8px}
@@ -416,7 +422,7 @@ details.terminos p{color:var(--gris);margin:0 0 6px;font-size:.84rem}
  */
 
 /** Versión del cuerpo de reglas. Cambiar ante CUALQUIER reforma o giro jurisprudencial. */
-const RULESET_VERSION = '2026.09.09-CO-3';
+const RULESET_VERSION = '2026.09.13-CO-4';
 
 const MS_DIA = 86400000;
 
@@ -1026,6 +1032,81 @@ function clasificarEvento(evento, fechaEvaluacion) {
 }
 
 /**
+ * Proyecta cuándo saldrá el dato negativo, y si pagar cambia esa fecha.
+ *
+ * EL HALLAZGO QUE ESTO EXPONE
+ *   Dos relojes corren en paralelo y gana el que venza primero:
+ *     · permanencia — el doble del tiempo de mora, tope 4 años, DESDE EL PAGO;
+ *     · caducidad absoluta — 8 años DESDE LA MORA, se pague o no.
+ *
+ *   En moras recientes pagar adelanta mucho la salida. Pero pasado cierto
+ *   punto —alrededor de los cuatro años de mora— la caducidad absoluta ya
+ *   llega antes que cualquier permanencia que el pago pueda abrir, y pagar
+ *   deja de limpiar el reporte más rápido.
+ *
+ *   Decirlo importa: el mercado entero vende "paga para limpiar tu historia",
+ *   y para esos casos es falso. El dato saldrá el mismo día pague o no.
+ *
+ *   Lo que NO dice esta proyección: que no convenga pagar. La deuda sigue
+ *   existiendo, la cobranza sigue, y una obligación extinguida se lee distinto
+ *   de una impaga. Solo dice si el pago acelera la salida del reporte.
+ *
+ * @param {EventoMora} evento
+ * @param {string} fechaEvaluacion
+ * @param {string} [fechaPagoHipotetica] por defecto, hoy
+ */
+function proyectarSalida(evento, fechaEvaluacion, fechaPagoHipotetica) {
+  const hoy = parseFecha(fechaEvaluacion, 'fechaEvaluacion');
+  if (hoy === null) throw new TypeError('fechaEvaluacion es obligatoria.');
+  const e = normalizarEvento(evento);
+  if (e.mora === null) {
+    return {
+      rulesetVersion: RULESET_VERSION,
+      determinable: false,
+      motivo: 'Sin fecha de constitución en mora no puede proyectarse la salida del dato.',
+    };
+  }
+
+  const pago = parseFecha(fechaPagoHipotetica ?? fmtFecha(hoy), 'fechaPagoHipotetica');
+  const porCaducidad = fechaCaducidadAbsoluta(e.mora);
+
+  // Ya extinguida: la fecha está fijada, no hay decisión que tomar.
+  if (e.extincion !== null) {
+    const porPermanencia = fechaRetiroPorPermanencia(e.mora, e.extincion);
+    const sale = Math.min(porPermanencia, porCaducidad);
+    return Object.freeze({
+      rulesetVersion: RULESET_VERSION,
+      determinable: true,
+      yaPagada: true,
+      fechaSalida: fmtFecha(sale),
+      diasRestantes: Math.max(0, diasEntre(hoy, sale)),
+      regla: sale === porCaducidad ? 'CADUCIDAD_ABSOLUTA' : 'PERMANENCIA',
+    });
+  }
+
+  const siPaga = Math.min(fechaRetiroPorPermanencia(e.mora, pago), porCaducidad);
+  const siNoPaga = porCaducidad;
+  const diasGanados = diasEntre(siPaga, siNoPaga);
+
+  return Object.freeze({
+    rulesetVersion: RULESET_VERSION,
+    determinable: true,
+    yaPagada: false,
+    fechaPagoConsiderada: fmtFecha(pago),
+    siPaga: fmtFecha(siPaga),
+    siNoPaga: fmtFecha(siNoPaga),
+    // Menos de un mes de diferencia no justifica presentarlo como ventaja.
+    pagarAcelera: diasGanados >= 30,
+    diasGanados: Math.max(0, diasGanados),
+    mesesGanados: Math.max(0, Math.round(diasGanados / 30)),
+    duracionMoraDias: diasEntre(e.mora, hoy),
+    advertencia: diasGanados >= 30
+      ? null
+      : 'Pagar no adelanta la salida de este reporte: la caducidad absoluta de ocho años desde la mora ya llega antes que cualquier permanencia que el pago abriría. Puede haber otras razones para pagar, pero limpiar el reporte más rápido no es una de ellas.',
+  });
+}
+
+/**
  * Clasifica una cartera completa.
  * @param {EventoMora[]} eventos
  * @param {string} fechaEvaluacion
@@ -1123,6 +1204,7 @@ module.exports = {
   // API
   clasificarEvento,
   clasificarCartera,
+  proyectarSalida,
   plazosReclamo,
 };
 
@@ -5323,6 +5405,50 @@ function leerFilas(){
   return filas.filter(f => Object.values(f).some(Boolean));
 }
 
+/** '2027-04-09' → 'abril de 2027'. Una fecha exacta a cinco años vista da una
+ *  falsa precisión; el mes y el año es lo que la persona necesita decidir. */
+function mesAnio(iso){
+  if(!iso) return '';
+  const [a,m] = iso.split('-').map(Number);
+  return `${MESES[m-1]} de ${a}`;
+}
+
+/**
+ * Para un dato que no se puede borrar, la respuesta útil es cuándo sale — y si
+ * pagar cambia esa fecha. En moras viejas no la cambia, y decirlo contradice a
+ * todo el mercado.
+ */
+function bloqueProyeccion(evento){
+  let p;
+  try{ p = N.proyectarSalida(evento, hoy()); }catch(e){ return ''; }
+  if(!p.determinable) return `<div class="razon">${esc(p.motivo)}</div>`;
+
+  if(p.yaPagada){
+    return `<div class="proyeccion">
+      <div class="fecha">Sale en ${esc(mesAnio(p.fechaSalida))}</div>
+      <p class="detalle">Ya está pagada, así que la fecha está fijada y no depende de nada más.</p>
+    </div>`;
+  }
+
+  if(p.pagarAcelera){
+    const años = Math.round(p.mesesGanados / 12);
+    const cuanto = p.mesesGanados >= 24 ? `${años} años` : `${p.mesesGanados} meses`;
+    return `<div class="proyeccion">
+      <div class="fecha">Sale en ${esc(mesAnio(p.siPaga))} si pagas</div>
+      <p class="detalle">Si no pagas, se queda hasta ${esc(mesAnio(p.siNoPaga))}.
+        Pagar lo adelanta <strong>${esc(cuanto)}</strong>, porque el plazo se cuenta desde que quedas al día.</p>
+    </div>`;
+  }
+
+  return `<div class="proyeccion sin-ventaja">
+    <div class="fecha">Sale en ${esc(mesAnio(p.siNoPaga))}, pagues o no</div>
+    <p class="detalle">Esta mora ya es antigua. El reporte caduca a los ocho años de haber empezado,
+      y esa fecha llega antes que el plazo que se abriría al pagar.
+      <strong>Pagar no lo va a limpiar más rápido</strong>, aunque puede haber otras razones para hacerlo:
+      la deuda sigue existiendo y la cobranza también.</p>
+  </div>`;
+}
+
 const TITULO = {
   CADUCADO:'Ya debería estar borrado',
   ILEGAL:'Te lo reportaron mal',
@@ -5352,12 +5478,14 @@ function evaluar(){
     let razon = '';
     if(d.categoria === 'CADUCADO') razon = `Pasó el tiempo que la ley permite mantenerlo. Exigible desde el ${d.fechaExigibilidad}.`;
     else if(d.categoria === 'ILEGAL') razon = 'Hay un defecto en cómo te lo reportaron, aunque la deuda sea real.';
-    else if(d.categoria === 'VIGENTE_LEGAL') razon = `El reporte es correcto y todavía está dentro del plazo. Saldría solo el ${d.fechaExigibilidad}. Pagar acorta ese plazo.`;
+    else if(d.categoria === 'VIGENTE_LEGAL') razon = null; // se explica con la proyección
     else razon = `Falta ${d.datosFaltantes.join(', ')}. Eso es justo lo que la central debe entregarte cuando responda.`;
     const altas = it.alertas.filter(a=>a.severidad==='ALTA');
+    const proy = d.categoria === 'VIGENTE_LEGAL' ? bloqueProyeccion(it.evento) : '';
     return `<div class="veredicto ${d.categoria}">
       <div class="titulo"><span>${esc(nombre)}</span><span style="font-weight:400;color:var(--gris);font-size:.85rem">${esc(TITULO[d.categoria])}</span></div>
-      <div class="razon">${esc(razon)}</div>
+      ${razon ? `<div class="razon">${esc(razon)}</div>` : ''}
+      ${proy}
       ${altas.length ? `<ul>${altas.map(a=>`<li>${esc(a.mensaje)}</li>`).join('')}</ul>` : ''}
     </div>`;
   }).join('') + `<p style="color:var(--gris);font-size:.86rem;margin-top:14px">Esto es una revisión preliminar sobre lo que escribiste. Antes de reclamar hay que confirmar las fechas con la entidad que reportó — para eso sirven los escritos que ya radicaste.</p>`;
